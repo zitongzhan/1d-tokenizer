@@ -338,6 +338,23 @@ def create_dataloader(config, logger, accelerator):
         )
         train_dataloader, eval_dataloader = dataset.train_dataloader, dataset.eval_dataloader
     # potentially, use a pretokenized dataset for ImageNet speed-up.
+    elif dataset_config.get("dataset_with_text_label", False) is False and dataset_config.get("train_image_folder", "") and dataset_config.get("eval_image_folder", ""):
+        normalize_mean: List[float] = [0., 0., 0.]
+        normalize_std: List[float] = [1., 1., 1.]
+        from torchvision import datasets, transforms
+
+        transform = ImageTransform(
+            preproc_config.resize_shorter_edge, preproc_config.crop_size, preproc_config.random_crop, preproc_config.random_flip,
+            normalize_mean, normalize_std)
+        class ImageFolder(datasets.ImageFolder):
+            def __getitem__(self, index):
+                data = super().__getitem__(index)
+                ans = {"image": data[0], "__key__": self.imgs[index][0], "class_id": data[1]}
+                return ans
+        train_dataset = ImageFolder(root=dataset_config.train_image_folder, transform=transform.train_transform)
+        test_dataset = ImageFolder(root=dataset_config.eval_image_folder, transform=transform.eval_transform)
+        train_dataloader = DataLoader(train_dataset, batch_size=config.training.per_gpu_batch_size, shuffle=True, drop_last=True, pin_memory=True)
+        eval_dataloader = DataLoader(test_dataset, batch_size=config.training.per_gpu_batch_size, shuffle=False, drop_last=False, pin_memory=True)
     else:
         if dataset_config.get("pretokenization", ""):
             train_dataloader = DataLoader(
