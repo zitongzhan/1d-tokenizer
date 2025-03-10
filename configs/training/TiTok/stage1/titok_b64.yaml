@@ -32,8 +32,11 @@ losses:
 
 dataset:
     params:
-        train_shards_path_or_url: "imagenet_sharded/train/imagenet-train-{0000..0252}.tar"
-        eval_shards_path_or_url: "imagenet_sharded/val/imagenet-val-{0000..0009}.tar"
+        pretokenization: "/home/csgrad/zzhan4/data/imagenet/pretokenization/pretokenized.jsonl"
+        # train_shards_path_or_url: "/data/zitong/imagenet_wds/imagenet-train-{000000..000320}.tar"
+        # eval_shards_path_or_url: "/data/zitong/imagenet_wds/imagenet-val-{000000..000049}.tar"
+        train_image_folder: "/home/csgrad/zzhan4/data/imagenet/train"
+        eval_image_folder: "/home/csgrad/zzhan4/data/imagenet/val_folder"
         num_workers_per_gpu: 12
     preprocessing:
         resize_shorter_edge: 256
@@ -41,6 +44,21 @@ dataset:
         random_crop: True
         random_flip: True
 
+datawarmup:
+    # Add arguments for data warmup
+    data_warmup_steps: 1000
+    scheduler_order: 0
+    start_effective_ratio: 0.1
+    max_effective_ratio: 1.0
+    used_uniform: False
+    n_clusters: 1000
+    norm: True
+    kmean_label: False
+    feature_extractor: "vit_base_patch8_224.dino"
+    feature_dir: "tmp"
+    sigma_init: 0.0
+    costant_softmax: False
+    used_zip: False
 
 optimizer:
     name: adamw 

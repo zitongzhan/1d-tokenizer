@@ -22,9 +22,11 @@ from pathlib import Path
 import pprint
 import glob
 from collections import defaultdict
+from typing import List
 import open_clip
 
-from data import SimpleImageDataset, PretoeknizedDataSetJSONL, PretokenizedWebDataset
+from data import SimpleImageDataset, PretoeknizedDataSetJSONL
+from data.webdataset_reader import ImageTransform
 import torch
 from torch.utils.data import DataLoader
 from omegaconf import OmegaConf
@@ -353,7 +355,40 @@ def create_dataloader(config, logger, accelerator):
                 return ans
         train_dataset = ImageFolder(root=dataset_config.train_image_folder, transform=transform.train_transform)
         test_dataset = ImageFolder(root=dataset_config.eval_image_folder, transform=transform.eval_transform)
-        train_dataloader = DataLoader(train_dataset, batch_size=config.training.per_gpu_batch_size, shuffle=True, drop_last=True, pin_memory=True)
+
+        # Initialize data warmup if specified
+        data_adjuster = None
+        from datawarmup_util import kmean_estimator
+        from datawarmup_util.weight_sampler import WeightedDistributedSampler, DataWeightTemperatureAdjustment
+
+        device = accelerator.device
+        args = config.datawarmup
+        args.batch_size = config.training.per_gpu_batch_size  # for the data loader inside
+        args.output_dir = config.experiment.output_dir
+        args.exp_name = config.experiment.name
+        if args.data_warmup_steps > 0:
+            weights = kmean_estimator.kmean_weight_generator(
+                dataset_config.train_image_folder,
+                args, accelerator.num_processes, accelerator.process_index, device, accelerator)
+            data_adjuster = DataWeightTemperatureAdjustment(train_dataset, weights, args.data_warmup_steps//(len(train_dataset)//total_batch_size_without_accum), args.start_effective_ratio, args.max_effective_ratio)
+            softmax_weights = data_adjuster.update_weights(0)[0]
+            sampler_train = WeightedDistributedSampler(train_dataset, softmax_weights, num_replicas=accelerator.num_processes, rank=accelerator.process_index, replacement=True, drop_last=False)
+        else:
+            sampler_train = torch.utils.data.DistributedSampler(
+                train_dataset, num_replicas=accelerator.num_processes,
+                rank=accelerator.process_index, shuffle=True, drop_last=False
+            )
+
+        train_dataloader = DataLoader(
+            train_dataset,
+            sampler=sampler_train,
+            batch_size=config.training.per_gpu_batch_size,
+            num_workers=dataset_config.num_workers_per_gpu,
+            pin_memory=True,
+            drop_last=False,
+            persistent_workers=True
+        )
+
         eval_dataloader = DataLoader(test_dataset, batch_size=config.training.per_gpu_batch_size, shuffle=False, drop_last=False, pin_memory=True)
     else:
         if dataset_config.get("pretokenization", ""):
