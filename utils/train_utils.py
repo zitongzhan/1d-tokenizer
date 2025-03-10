@@ -320,7 +320,7 @@ def create_dataloader(config, logger, accelerator):
         )
         train_dataloader, eval_dataloader = dataset.train_dataloader, dataset.eval_dataloader
     # SimpleImageDataset
-    elif dataset_config.get("pretokenization", "") and dataset_config.get("dataset_with_text_label", False) is False:
+    elif dataset_config.get("pretokenization", "") and dataset_config.get("dataset_with_text_label", False) is False and dataset_config.get("train_shards_path_or_url", "") and dataset_config.get("eval_shards_path_or_url", ""):
         dataset = SimpleImageDataset(
             train_shards_path=dataset_config.train_shards_path_or_url,
             eval_shards_path=dataset_config.eval_shards_path_or_url,
